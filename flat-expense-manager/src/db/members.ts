@@ -17,6 +17,8 @@ export interface MemberInput {
   name: string;
   /** Login username; required in shared mode, ignored in local mode. */
   username?: string;
+  /** Login password; only used in shared mode when the admin creates a new member. */
+  password?: string;
   phone?: string;
   email?: string;
   notes?: string;
@@ -55,7 +57,7 @@ export type MemberFieldErrors = Partial<Record<keyof MemberInput, string>>;
 
 export const USERNAME_PATTERN = /^[a-z0-9_.]{3,30}$/;
 
-export function validateMember(input: MemberInput, opts: { requireUsername?: boolean } = {}): MemberFieldErrors {
+export function validateMember(input: MemberInput, opts: { requireUsername?: boolean; requirePassword?: boolean } = {}): MemberFieldErrors {
   const errors: MemberFieldErrors = {};
   const name = input.name.trim();
   if (name.length < 2) errors.name = 'Enter a name of at least 2 characters.';
@@ -68,6 +70,7 @@ export function validateMember(input: MemberInput, opts: { requireUsername?: boo
   if (opts.requireUsername) {
     const username = (input.username ?? '').trim().toLowerCase();
     if (!USERNAME_PATTERN.test(username)) errors.username = 'Use 3–30 lowercase letters, numbers, _ or . (e.g. ali).';
+    if (opts.requirePassword && (input.password ?? '').length < 6) errors.password = 'Password must be at least 6 characters.';
   }
   return errors;
 }

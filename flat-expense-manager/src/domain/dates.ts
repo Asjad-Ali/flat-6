@@ -79,7 +79,7 @@ export function relativeDayLabel(iso: string, today = todayISO()): string {
 
 /** Formats an SQLite UTC timestamp or ISO timestamp ("YYYY-MM-DD HH:MM:SS") in local time: "8 Nov 2026, 14:05". */
 export function formatTimestamp(sqliteUtc: string): string {
-  // SQLite gives "YYYY-MM-DD HH:MM:SS" (UTC); Supabase gives full ISO with a time zone.
+  // SQLite gives "YYYY-MM-DD HH:MM:SS" (UTC); Firebase data uses full ISO with a time zone.
   const iso = /[zZ]|[+-]\d\d:?\d\d$/.test(sqliteUtc) ? sqliteUtc.replace(' ', 'T') : `${sqliteUtc.replace(' ', 'T')}Z`;
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return sqliteUtc;

@@ -1,0 +1,120 @@
+rules_version = '2';
+
+// Flat Expense Manager: who may read and change what.
+//
+//   * Only logged-in, active members of the flat can read anything.
+//   * Anyone in the flat can ADD an expense or a payment.
+//   * ONLY the member who added an entry can edit or delete it. Nobody else, not even the admin.
+//   * The admin only manages the member list.
+//   * The first person to set the flat up becomes the admin; after that nobody can join by themselves.
+//
+// Collections:
+//   meta/flat          { adminUid, createdAt }                 exists once the flat is set up
+//   users/{authUid}    { memberId, isAdmin, active }           links a login to a member
+//   members/{id}       { name, username, phone, email, notes, isAdmin, isActive, uid, createdAt }
+//   expenses/{id}      { title, description, amount, category, date, paidBy, splitMode,
+//                        splits: [{ memberId, amount }], createdBy, createdAt, updatedAt }
+//   settlements/{id}   { fromId, toId, amount, date, note, createdBy, createdAt }
+//   pushTokens/{token} { uid, memberId, updatedAt }            phones to notify
+//
+// Money is integer paisa (Rs. 1 = 100).
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+    function myLogin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function isMember() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && myLogin().active == true;
+    }
+    function isAdmin() {
+      return isMember() && myLogin().isAdmin == true;
+    }
+    // True only inside the one-time setup batch that creates the flat and its admin.
+    function isSetup() {
+      return signedIn()
+        && !exists(/databases/$(database)/documents/meta/flat)
+        && getAfter(/databases/$(database)/documents/meta/flat).data.adminUid == request.auth.uid;
+    }
+    function addedByMe(data) {
+      return data.createdBy == myLogin().memberId;
+    }
+    function validMoney(amount) {
+      return amount is int && amount > 0 && amount <= 1000000000;
+    }
+    function validDate(value) {
+      return value is string && value.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$');
+    }
+    function validExpense(data) {
+      return data.title is string && data.title.size() >= 1 && data.title.size() <= 80
+        && (data.description == null || (data.description is string && data.description.size() <= 300))
+        && validMoney(data.amount)
+        && data.category in ['Groceries', 'Milk', 'Electricity', 'Gas', 'Internet', 'Rent', 'Other']
+        && validDate(data.date)
+        && data.paidBy is string
+        && data.splitMode in ['equal', 'amounts']
+        && data.splits is list && data.splits.size() >= 1 && data.splits.size() <= 50;
+    }
+    function validSettlement(data) {
+      return data.fromId is string && data.toId is string && data.fromId != data.toId
+        && validMoney(data.amount)
+        && validDate(data.date)
+        && (data.note == null || (data.note is string && data.note.size() <= 200));
+    }
+
+    match /meta/flat {
+      // Lets the login screen know whether the flat has been set up yet.
+      allow get: if true;
+      allow create: if signedIn()
+        && request.resource.data.adminUid == request.auth.uid
+        && existsAfter(/databases/$(database)/documents/users/$(request.auth.uid));
+      allow update, delete: if false;
+    }
+
+    match /users/{uid} {
+      allow read: if signedIn() && (request.auth.uid == uid || isMember());
+      allow create: if isAdmin()
+        || (isSetup() && uid == request.auth.uid
+            && request.resource.data.isAdmin == true && request.resource.data.active == true);
+      // The admin cannot lock themselves out or change their own role.
+      allow update, delete: if isAdmin() && uid != request.auth.uid;
+    }
+
+    match /members/{memberId} {
+      allow read: if isMember();
+      allow create: if isAdmin() || isSetup();
+      allow update: if isAdmin();
+      allow delete: if false; // members are archived, never deleted, so history stays intact
+    }
+
+    match /expenses/{expenseId} {
+      allow read: if isMember();
+      allow create: if isMember() && addedByMe(request.resource.data) && validExpense(request.resource.data);
+      allow update: if isMember() && addedByMe(resource.data)
+        && request.resource.data.createdBy == resource.data.createdBy
+        && validExpense(request.resource.data);
+      allow delete: if isMember() && addedByMe(resource.data);
+    }
+
+    match /settlements/{settlementId} {
+      allow read: if isMember();
+      allow create: if isMember() && addedByMe(request.resource.data) && validSettlement(request.resource.data);
+      allow update: if false; // payments are never edited: delete and record again
+      allow delete: if isMember() && addedByMe(resource.data);
+    }
+
+    match /pushTokens/{token} {
+      allow read: if isMember();
+      allow create, update: if isMember()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.memberId == myLogin().memberId;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+  }
+}

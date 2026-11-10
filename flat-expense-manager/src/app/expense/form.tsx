@@ -56,7 +56,7 @@ export default function ExpenseFormScreen() {
 
   return (
     <>
-      <Stack.Screen options={{ title: id ? 'Edit expense' : 'New expense' }} />
+      <Stack.Screen options={{ title: !id ? 'New expense' : data?.expense && !store.canEdit(data.expense.createdBy) ? 'Expense details' : 'Edit expense' }} />
       {loading ? (
         <LoadingView />
       ) : error || !data || (id && !data.expense) ? (

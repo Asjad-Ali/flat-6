@@ -4,14 +4,36 @@
     "appVersionSource": "remote"
   },
   "build": {
+    "base": {
+      "env": {
+        "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyBGVj0hh5jbdSTNMJ4U2MfPlFe89mS3yTY",
+        "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "flat-6-expense.firebaseapp.com",
+        "EXPO_PUBLIC_FIREBASE_PROJECT_ID": "flat-6-expense",
+        "EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET": "flat-6-expense.firebasestorage.app",
+        "EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID": "810845662803",
+        "EXPO_PUBLIC_FIREBASE_APP_ID": "1:810845662803:web:3929f08bebf498d876a0a6"
+      }
+    },
     "preview": {
+      "extends": "base",
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      },
-      "env": {
-        "EXPO_PUBLIC_SUPABASE_URL": "PASTE_YOUR_SUPABASE_PROJECT_URL",
-        "EXPO_PUBLIC_SUPABASE_ANON_KEY": "PASTE_YOUR_SUPABASE_ANON_PUBLIC_KEY"
+      }
+    },
+    "production": {
+      "extends": "base",
+      "autoIncrement": true,
+      "android": {
+        "buildType": "app-bundle"
+      }
+    }
+  },
+  "submit": {
+    "production": {
+      "android": {
+        "track": "internal",
+        "releaseStatus": "completed"
       }
     }
   }

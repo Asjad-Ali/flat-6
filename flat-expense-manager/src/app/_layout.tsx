@@ -15,12 +15,12 @@ import { colors } from '../theme';
 export { ErrorBoundary } from 'expo-router';
 
 /**
- * Shared mode (Supabase settings present): login required, data synced between phones.
+ * Shared mode (Firebase settings present): login required, data synced between phones.
  * Local mode (no settings): everything stays on this phone.
  */
 function DataProvider({ children }: { children: ReactNode }) {
   if (isCloudConfigured) {
-    return <CloudStoreProvider renderGate={(auth) => <AuthGate auth={auth} />}>{children}</CloudStoreProvider>;
+    return <CloudStoreProvider Gate={AuthGate}>{children}</CloudStoreProvider>;
   }
   return <LocalStoreProvider>{children}</LocalStoreProvider>;
 }

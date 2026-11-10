@@ -6,17 +6,18 @@
     "@expo/metro-runtime": "~58.0.17",
     "@expo/vector-icons": "^15.0.2",
     "@react-native-community/datetimepicker": "9.2.1",
-    "@supabase/supabase-js": "^2.119.0",
     "babel-preset-expo": "~58.0.0",
     "expo": "~58.0.23",
     "expo-constants": "~58.0.15",
     "expo-font": "~58.0.11",
     "expo-linking": "~58.0.16",
+    "expo-notifications": "~58.1.8",
     "expo-print": "~58.0.8",
     "expo-router": "~58.0.30",
     "expo-sharing": "~58.0.22",
     "expo-sqlite": "~58.0.15",
     "expo-status-bar": "~58.0.4",
+    "firebase": "^13.2.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",
@@ -25,7 +26,6 @@
     "react-native-web": "^0.21.4"
   },
   "devDependencies": {
-    "@electric-sql/pglite": "^0.5.15",
     "@types/jest": "^30.0.0",
     "@types/react": "~19.3.0",
     "eslint": "^9.0.0",
@@ -38,15 +38,16 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
-    "test": "NODE_OPTIONS=--experimental-vm-modules jest",
+    "test": "jest",
     "typecheck": "tsc --noEmit",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "test:firebase": "EXPO_PUBLIC_FIREBASE_API_KEY=demo-key EXPO_PUBLIC_FIREBASE_PROJECT_ID=demo-flat6 EXPO_PUBLIC_FIREBASE_APP_ID=demo-app EXPO_PUBLIC_FIREBASE_EMULATOR_HOST=localhost npx firebase-tools@latest emulators:exec --only auth,firestore --project demo-flat6 \"jest --config jest.emulator.config.js --runInBand\""
   },
   "private": true,
   "jest": {
     "testEnvironment": "node",
     "testMatch": [
-      "<rootDir>/__tests__/**/*.test.ts"
+      "<rootDir>/__tests__/*.test.ts"
     ],
     "transform": {
       "\\.[jt]sx?$": [
@@ -57,6 +58,9 @@
           ]
         }
       ]
+    },
+    "moduleNameMapper": {
+      "^expo/virtual/env$": "<rootDir>/__tests__/support/env.js"
     }
   }
 }

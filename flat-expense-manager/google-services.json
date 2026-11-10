@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "810845662803",
+    "project_id": "flat-6-expense",
+    "storage_bucket": "flat-6-expense.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:810845662803:android:d209ecc2857df0f576a0a6",
+        "android_client_info": {
+          "package_name": "com.flatexpense.manager"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCpuqE2hRINZWr19SlNRU3gXgJLetZP6OM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

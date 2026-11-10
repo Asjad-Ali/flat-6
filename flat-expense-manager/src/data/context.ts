@@ -21,7 +21,7 @@ type SaveOpts = { allowDuplicate?: boolean };
 
 /**
  * Every change the screens make goes through the store. Local mode writes to the phone's
- * database; shared mode writes to Supabase and refreshes the phone's copy.
+ * database; shared mode writes to Firebase, which then updates every phone's copy.
  */
 export interface Store {
   mode: 'local' | 'cloud';
@@ -38,7 +38,9 @@ export interface Store {
   saveMember(id: number | undefined, input: MemberInput): Promise<number>;
   removeMember(id: number): Promise<'deleted' | 'archived'>;
   restoreMember(id: number): Promise<void>;
-  /** Re-download shared data (shared mode) and refresh screens. */
+  /** Shared mode, admin only: gives a member who forgot their password a new one. */
+  resetMemberLogin?(id: number, password: string): Promise<void>;
+  /** Refresh screens from the latest shared data. */
   refresh(): Promise<void>;
   signOut(): Promise<void>;
 }

@@ -50,3 +50,8 @@ coverage/
 
 # generated native folder
 /android
+
+# Firebase: emulator logs and the private service-account key (never commit the key)
+*-debug.log
+*service-account*.json
+*firebase-adminsdk*.json

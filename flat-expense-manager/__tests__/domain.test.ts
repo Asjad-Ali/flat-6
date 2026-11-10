@@ -8,6 +8,7 @@ import {
   startOfWeek,
 } from '../src/domain/dates';
 import { formatPKR, paisaToInput, parseAmount } from '../src/domain/money';
+import { expenseAddedMessages, paymentRecordedMessages } from '../src/domain/notify';
 import { checkSplit, equalSplit, suggestTransfers } from '../src/domain/split';
 
 describe('money', () => {
@@ -127,5 +128,38 @@ describe('settle up', () => {
 
   it('returns nothing when everyone is settled', () => {
     expect(suggestTransfers([{ memberId: 1, balance: 0 }])).toEqual([]);
+  });
+});
+
+describe('push notifications', () => {
+  const targets = [
+    { token: 'ali-phone', memberId: 'ali' },
+    { token: 'bilal-phone', memberId: 'bilal' },
+    { token: 'bilal-tablet', memberId: 'bilal' },
+    { token: 'usman-phone', memberId: 'usman' },
+  ];
+
+  it('tells everyone except the person who added the expense, with their own share', () => {
+    const messages = expenseAddedMessages({
+      targets,
+      actorId: 'ali',
+      actorName: 'Ali Khan',
+      expenseId: 'e1',
+      title: 'Groceries',
+      amount: 300000,
+      splits: [
+        { memberId: 'ali', amount: 150000 },
+        { memberId: 'bilal', amount: 150000 },
+      ],
+    });
+    expect(messages.map((m) => m.to)).toEqual(['bilal-phone', 'bilal-tablet', 'usman-phone']);
+    expect(messages[0]).toMatchObject({ title: 'New expense', body: 'Ali Khan added Groceries · Rs. 3,000 · your share Rs. 1,500', data: { type: 'expense', expenseId: 'e1' }, channelId: 'default' });
+    expect(messages[2].body).toBe('Ali Khan added Groceries · Rs. 3,000 · you are not in this split');
+  });
+
+  it('announces payments to everyone except the person who recorded it', () => {
+    const messages = paymentRecordedMessages({ targets, actorId: 'bilal', fromName: 'Bilal Ahmed', toName: 'Ali Khan', amount: 120000 });
+    expect(messages.map((m) => m.to)).toEqual(['ali-phone', 'usman-phone']);
+    expect(messages[0].body).toBe('Bilal Ahmed paid Ali Khan Rs. 1,200');
   });
 });

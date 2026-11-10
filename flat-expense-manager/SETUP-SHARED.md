@@ -1,49 +1,95 @@
-# Shared setup: 6 phones, one flat
+# Shared setup with Firebase: 6–8 phones, one flat
 
-Each flatmate logs in on their own phone. Every expense and payment syncs to all phones. Only the person who added an entry can change or delete it.
+Every flatmate logs in on their own phone with a username and password. Expenses and payments sync to all phones, and everyone gets a notification when someone adds one. Only the person who added an entry can change or delete it.
 
-The setup takes about 20 minutes and is done once, by one person (the admin).
+The setup takes about 25 minutes and is done once, by the admin. Everything is on Firebase's free plan (Spark); no card is needed.
 
-## 1. Create the online database (Supabase, free)
+## 1. Create the Firebase project
 
-1. Go to <https://supabase.com>, sign up, and click **New project**. Choose any name and a strong database password, and pick the region closest to you (e.g. Mumbai or Singapore).
-2. When the project is ready, open **SQL Editor → New query**. Paste the whole of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**.
-3. Open [`supabase/members.sql`](supabase/members.sql) and change the names and usernames to your six flatmates. Usernames are lowercase, e.g. `ali`, `bilal`. Set `true` for one admin only; the admin can only add or remove flatmates. Paste it into a new query and press **Run**.
-4. Create a login for each person. Go to **Authentication → Users → Add user → Create new user** and enter:
-   - **Email:** `username@flat6.app`, e.g. `ali@flat6.app`. No email is ever sent.
-   - **Password:** choose one and give it to that person.
-   - Tick **Auto Confirm User**.
-5. Go to **Project Settings → API** and copy the **Project URL** and the **anon public** key.
+1. Go to <https://console.firebase.google.com> and sign in with a Google account.
+2. Click **Create a project** (or **Add project**). Name it e.g. `flat-6`. You can turn **Google Analytics off**.
 
-## 2. Put the keys in the app
+## 2. Turn on login
 
-- **For testing on your computer:** copy `.env.example` to `.env` and paste both values in.
-- **For the APK:** in [`eas.json`](eas.json), replace `PASTE_YOUR_SUPABASE_PROJECT_URL` and `PASTE_YOUR_SUPABASE_ANON_PUBLIC_KEY` with the same two values.
+1. In the left menu open **Build → Authentication** and click **Get started**.
+2. On the **Sign-in method** tab choose **Email/Password**, switch **Enable** on, and **Save**.
 
-The anon key is designed to be inside apps. The database rules in `schema.sql` protect the data, so only logged-in flatmates can read it, and only through the allowed actions.
+You don't create any users here. You add your flatmates inside the app later.
 
-## 3. Build the APK (Expo EAS, free)
+## 3. Create the database and its rules
+
+1. Open **Build → Firestore Database** and click **Create database**.
+2. Choose a location close to you (e.g. `asia-south1 (Mumbai)`), then **Start in production mode**, then **Create**.
+3. Open the **Rules** tab. Delete everything in the editor, paste the whole of [`firestore.rules`](firestore.rules), and click **Publish**.
+
+These rules are what protect the data: only your flatmates can read it, and only the person who added an entry can change it.
+
+## 4. Get the app's settings
+
+1. Click the gear icon → **Project settings**. Under **Your apps** click the **Web** icon (`</>`).
+2. Give it any nickname (e.g. `flat app`) and click **Register app**. Do not tick Hosting.
+3. Firebase shows a `firebaseConfig` block with six values. Copy them into [`eas.json`](eas.json), replacing each `PASTE_…`:
+
+| In `firebaseConfig` | In `eas.json` |
+|---|---|
+| `apiKey` | `EXPO_PUBLIC_FIREBASE_API_KEY` |
+| `authDomain` | `EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN` |
+| `projectId` | `EXPO_PUBLIC_FIREBASE_PROJECT_ID` |
+| `storageBucket` | `EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET` |
+| `messagingSenderId` | `EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` |
+| `appId` | `EXPO_PUBLIC_FIREBASE_APP_ID` |
+
+To test on your computer first, copy `.env.example` to `.env` and paste the same values there.
+
+These values are safe to put in the app. They only identify the project; the rules from step 3 do the protecting.
+
+## 5. Turn on push notifications
+
+1. In **Project settings → Your apps** click **Add app → Android**.
+   - Android package name: `com.flatexpense.manager`
+   - Click **Register app**, then **Download google-services.json**.
+   - Put that file in the `flat-expense-manager` folder, next to `app.json`. Skip the remaining steps on that page.
+2. In **Project settings → Service accounts** click **Generate new private key** and download the JSON file. Keep this file private and never share or commit it.
+3. Give that key to Expo so it can deliver notifications:
+   ```bash
+   cd "/home/ghulam-shabbir/flat 6 app/flat-expense-manager"
+   npx eas-cli@latest credentials
+   ```
+   Choose **Android → production → Google Service Account → Manage your Google Service Account Key for Push Notifications (FCM V1) → Set up → Upload a new service account key**, and pick the file from step 2.
+
+If you skip this section the app still works and syncs; only the notifications are missing.
+
+## 6. Build the APK
 
 ```bash
-npx eas-cli@latest login            # create a free account at expo.dev if needed
-npx eas-cli@latest init             # once: links this project to your Expo account
 npx eas-cli@latest build -p android --profile preview
 ```
 
-The build runs in Expo's cloud and takes about 10–20 minutes. When it finishes you get a **download link** for the APK.
+When it finishes (10–20 minutes) you get a download link for the APK.
 
-## 4. Install on all six phones
+## 7. Set up the flat (first time only)
 
-1. Send the link on WhatsApp.
-2. Each person opens it, downloads the APK, and taps it. Android asks to allow "Install unknown apps"; allow it for the browser or WhatsApp.
-3. Open the app and log in with your **username** (e.g. `ali`) and password.
+1. Install the APK on your own phone and open it. It shows **Set up your flat**.
+2. Enter your name, an admin username (e.g. `admin`) and a password of at least 6 characters, and tap **Create flat**. You are now the admin.
+3. Go to **Members → Add member** for each flatmate. Enter their name, a **login username** (e.g. `ali`) and a **password**.
+4. Send each flatmate the APK link plus their username and password.
+
+Do this before sharing the APK: the first person to open the app becomes the admin.
 
 ## How it works day to day
 
-- Anyone can **add** an expense or record a payment. It shows on every phone within a second or two.
-- Only the person who added an entry can **edit or delete** it. Everyone else sees it read-only, with "Added by …".
-- **No internet?** You can still view everything saved on the phone. Adding or changing needs internet, so nobody's data conflicts.
-- **New phone or reset?** Install the APK again and log in. Everything comes back, because it's stored online.
-- **Forgot a password?** The admin resets it in Supabase → Authentication → Users → (person) → Reset password / Update user.
-- **Someone leaves the flat?** The admin opens Members → that person → **Remove**. They can no longer log in, and all their history stays.
-- **Someone new joins?** The admin adds them in the app (Members → Add member, with a login username), then creates their login in Supabase as in step 1.4.
+- **Anyone can add** an expense or record a payment. It appears on every phone in a moment, and the others get a notification such as "Ali added Groceries · Rs. 3,000 · your share Rs. 500".
+- **Only the person who added an entry can edit or delete it.** Everyone else, including the admin, sees it read-only with "Added by …".
+- **The admin** only adds, edits and removes flatmates.
+- **No internet?** You can still view everything saved on the phone. Adding or changing needs internet.
+- **New phone?** Install the APK and log in. Everything comes back, because it is stored online.
+- **Someone leaves?** Admin: Members → that person → edit → **Remove**. They can no longer open the flat; their history stays.
+- **Forgot a password?**
+  1. In the Firebase console open **Authentication → Users**, find `username@flat6.app`, and delete that user from the ⋮ menu.
+  2. In the app, the admin opens Members → that person → edit, types a new password under **Forgot password?**, and taps **Set new password**. Their records are untouched.
+
+## Good to know
+
+- Notifications are sent from the phone of the person who adds the entry, right when they save it. That keeps the project on the free plan.
+- Firebase can check who is allowed to change an entry, but not arithmetic. "Shares add up to the total" is checked by the app before saving.
+- To check everything on your computer before going live, run `npm run test:firebase` (needs Java 21 or newer).

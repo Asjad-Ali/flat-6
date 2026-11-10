@@ -29,7 +29,13 @@
       "expo-status-bar",
       "@react-native-community/datetimepicker",
       "expo-font",
-      "expo-sharing"
+      "expo-sharing",
+      [
+        "expo-notifications",
+        {
+          "color": "#4F46E5"
+        }
+      ]
     ],
     "extra": {
       "router": {

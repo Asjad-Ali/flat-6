@@ -107,20 +107,31 @@ const MIGRATIONS: string[] = [
   `,
 
   // v3: shared (cloud) mode. Records who added each entry and each member's login username.
-  // In cloud mode this database is a read cache of the Supabase data.
+  // In shared mode this database is the phone's copy of the online data.
   `
   ALTER TABLE members ADD COLUMN username TEXT;
   ALTER TABLE members ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE expenses ADD COLUMN created_by INTEGER;
   ALTER TABLE settlements ADD COLUMN created_by INTEGER;
   `,
+
+  // v4: Firebase ids are strings. The phone keeps its own integer ids (so every screen and
+  // query stays the same) and remembers the matching Firebase id in remote_id.
+  `
+  ALTER TABLE members ADD COLUMN remote_id TEXT;
+  ALTER TABLE expenses ADD COLUMN remote_id TEXT;
+  ALTER TABLE settlements ADD COLUMN remote_id TEXT;
+  CREATE UNIQUE INDEX idx_members_remote ON members (remote_id) WHERE remote_id IS NOT NULL;
+  CREATE UNIQUE INDEX idx_expenses_remote ON expenses (remote_id) WHERE remote_id IS NOT NULL;
+  CREATE UNIQUE INDEX idx_settlements_remote ON settlements (remote_id) WHERE remote_id IS NOT NULL;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 /** Local-only mode database. */
 export const DATABASE_NAME = 'flat-expenses.db';
-/** Shared mode: local copy of the Supabase data (a separate file, so local-only data is never touched). */
-export const CLOUD_CACHE_DATABASE_NAME = 'flat-cloud-cache.db';
+/** Shared mode: this phone's copy of the Firebase data (a separate file, so local-only data is never touched). */
+export const CLOUD_CACHE_DATABASE_NAME = 'flat-shared-cache.db';
 
 export async function migrate(db: Db): Promise<void> {
   await db.execAsync('PRAGMA foreign_keys = ON;');

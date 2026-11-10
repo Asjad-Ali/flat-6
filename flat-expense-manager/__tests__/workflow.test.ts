@@ -16,6 +16,7 @@ import { createSettlement, deleteSettlement, listSettlements } from '../src/db/s
 import { equalSplit } from '../src/domain/split';
 import { getReportData } from '../src/report/data';
 import { buildReportHtml } from '../src/report/html';
+import { applySnapshot, EMPTY_SNAPSHOT, localIdOf, remoteIdOf, type Snapshot } from '../src/cloud/snapshot';
 import { createTestDb } from './testDb';
 
 const TODAY = '2026-11-15';
@@ -298,6 +299,50 @@ describe('Tricount-style workflow', () => {
       const html = buildReportHtml(await getReportData(db, { label: 'All time' }, TODAY));
       expect(html).toContain('No expenses in this period.');
       expect(html).toContain('Everyone is settled up.');
+    });
+  });
+
+  describe('phone copy of shared data', () => {
+    const at = (n: number) => `2026-11-0${n}T10:00:00.000Z`;
+    const shared = (): Snapshot => ({
+      members: [
+        { id: 'm-ali', name: 'Ali', username: 'ali', phone: null, email: null, notes: null, isAdmin: true, isActive: true, createdAt: at(1) },
+        { id: 'm-bilal', name: 'Bilal', username: 'bilal', phone: null, email: null, notes: null, isAdmin: false, isActive: true, createdAt: at(2) },
+      ],
+      expenses: [
+        { id: 'e-1', title: 'Rent', description: null, amount: rs(1000), category: 'Rent', date: '2026-11-05', paidBy: 'm-ali', splitMode: 'equal', splits: [{ memberId: 'm-ali', amount: rs(500) }, { memberId: 'm-bilal', amount: rs(500) }], createdBy: 'm-ali', createdAt: at(3), updatedAt: at(3) },
+      ],
+      settlements: [{ id: 's-1', fromId: 'm-bilal', toId: 'm-ali', amount: rs(200), date: '2026-11-06', note: null, createdBy: 'm-bilal', createdAt: at(4) }],
+    });
+
+    it('stores shared data, keeps local ids stable, and follows edits and deletions', async () => {
+      const phone = await createTestDb();
+      await applySnapshot(phone, shared());
+      const expenseId = (await localIdOf(phone, 'expenses', 'e-1'))!;
+      expect(await remoteIdOf(phone, 'expenses', expenseId)).toBe('e-1');
+      expect((await getMemberBalances(phone)).map((b) => [b.name, b.balance])).toEqual([['Ali', rs(300)], ['Bilal', -rs(300)]]);
+      expect((await getExpense(phone, expenseId))!.createdByName).toBe('Ali');
+
+      // Applying the same data again changes nothing.
+      await applySnapshot(phone, shared());
+      expect(await listExpenses(phone)).toHaveLength(1);
+      expect(await listSettlements(phone)).toHaveLength(1);
+
+      // The owner edits the expense, deletes the payment, and a new member joins.
+      const next = shared();
+      next.expenses[0] = { ...next.expenses[0], title: 'Rent (Nov)', amount: rs(900), splits: [{ memberId: 'm-ali', amount: rs(900) }], updatedAt: at(7) };
+      next.settlements = [];
+      next.members.push({ id: 'm-usman', name: 'Usman', username: 'usman', phone: null, email: null, notes: null, isAdmin: false, isActive: true, createdAt: at(8) });
+      await applySnapshot(phone, next);
+      expect(await localIdOf(phone, 'expenses', 'e-1')).toBe(expenseId);
+      expect(await getExpense(phone, expenseId)).toMatchObject({ title: 'Rent (Nov)', amount: rs(900), splitCount: 1 });
+      expect(await listSettlements(phone)).toHaveLength(0);
+      expect((await listMembers(phone)).map((m) => m.username)).toEqual(['ali', 'bilal', 'usman']);
+
+      // Logging out clears the phone.
+      await applySnapshot(phone, EMPTY_SNAPSHOT);
+      expect(await listExpenses(phone)).toHaveLength(0);
+      expect(await listMembers(phone, { includeInactive: true })).toHaveLength(0);
     });
   });
 });

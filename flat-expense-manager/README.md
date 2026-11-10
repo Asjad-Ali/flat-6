@@ -6,8 +6,8 @@ Built with Expo SDK 58, React Native, TypeScript, Expo Router and expo-sqlite.
 
 ## Two modes
 
-- **Shared mode (6 phones, login + live sync):** set up Supabase and build the APK by following **[SETUP-SHARED.md](SETUP-SHARED.md)**. Only the person who added an expense or payment can change or delete it.
-- **Local mode:** with no Supabase settings, everything stays on one phone with no login.
+- **Shared mode (6–8 phones, login, live sync, push notifications):** set up a free Firebase project and build the APK by following **[SETUP-SHARED.md](SETUP-SHARED.md)**. Only the person who added an expense or payment can change or delete it.
+- **Local mode:** with no Firebase settings, everything stays on one phone with no login.
 
 ## Running
 
@@ -15,6 +15,7 @@ Built with Expo SDK 58, React Native, TypeScript, Expo Router and expo-sqlite.
 npm install
 npm start              # then scan the QR code with Expo Go, or press w for web
 npm test               # money, splitting, settle-up and database tests
+npm run test:firebase  # login, permissions and sync against the Firebase emulator (needs Java 21+)
 npm run typecheck
 npm run lint
 ```
@@ -39,7 +40,10 @@ To build an installable APK, run `npx eas-cli@latest build -p android --profile 
 src/app/         Screens (tabs: Home, Expenses, Balances, Members, Reports)
 src/domain/      Pure logic: money (integer paisa), dates, equal split, settle-up plan
 src/db/          SQLite schema + migrations; repositories for members, expenses, settlements, balances, reports
+src/cloud/       Firebase: login, Firestore reads/writes, push notifications, phone copy of shared data
+src/data/        Store used by every screen: local mode (SQLite only) or shared mode (Firebase + SQLite copy)
 src/components/  Shared UI kit
+firestore.rules  Server rules: members only; only the person who added an entry can change it
 __tests__/       Jest tests; repository SQL runs against real SQLite (node:sqlite)
 ```
 

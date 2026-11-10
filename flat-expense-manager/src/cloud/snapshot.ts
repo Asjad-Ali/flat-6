@@ -1,170 +1,168 @@
 import { transaction, type Db, type SqlValue } from '../db/client';
 
-/** Rows exactly as Supabase returns them. Money is integer paisa. */
+/** Shared data as stored in Firebase. Ids are Firebase document ids; money is integer paisa. */
 export interface RemoteMember {
-  id: number;
+  id: string;
   name: string;
   username: string;
   phone: string | null;
   email: string | null;
   notes: string | null;
-  is_admin: boolean;
-  is_active: boolean;
-  created_at: string;
+  isAdmin: boolean;
+  isActive: boolean;
+  createdAt: string;
 }
 
 export interface RemoteExpense {
-  id: number;
+  id: string;
   title: string;
   description: string | null;
   amount: number;
   category: string;
-  expense_date: string;
-  paid_by: number;
-  split_mode: string;
-  created_by: number;
-  created_at: string;
-  updated_at: string;
-}
-
-export interface RemoteSplit {
-  expense_id: number;
-  member_id: number;
-  amount: number;
+  date: string;
+  paidBy: string;
+  splitMode: string;
+  splits: { memberId: string; amount: number }[];
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface RemoteSettlement {
-  id: number;
-  from_member_id: number;
-  to_member_id: number;
+  id: string;
+  fromId: string;
+  toId: string;
   amount: number;
-  settlement_date: string;
+  date: string;
   note: string | null;
-  created_by: number;
-  created_at: string;
+  createdBy: string;
+  createdAt: string;
 }
 
 export interface Snapshot {
   members: RemoteMember[];
   expenses: RemoteExpense[];
-  splits: RemoteSplit[];
   settlements: RemoteSettlement[];
 }
 
-/** Minimal shape of the Supabase query builder used here (keeps this file testable). */
-export interface SnapshotSource {
-  from(table: string): {
-    select(columns: string): {
-      order(column: string, opts: { ascending: boolean }): {
-        range(from: number, to: number): PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>;
-      };
-    };
-  };
+export const EMPTY_SNAPSHOT: Snapshot = { members: [], expenses: [], settlements: [] };
+
+const byCreated = <T extends { createdAt: string; id: string }>(rows: T[]) =>
+  [...rows].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+
+async function idMap(db: Db, table: 'members' | 'expenses' | 'settlements'): Promise<Map<string, number>> {
+  const rows = await db.getAllAsync<{ id: number; remote_id: string }>(
+    `SELECT id, remote_id FROM ${table} WHERE remote_id IS NOT NULL`,
+    [],
+  );
+  return new Map(rows.map((r) => [r.remote_id, r.id]));
 }
 
-const PAGE = 1000;
-
-async function fetchAll<T>(source: SnapshotSource, table: string, columns: string, orderBy: string): Promise<T[]> {
-  const rows: T[] = [];
-  for (let from = 0; ; from += PAGE) {
-    const { data, error } = await source.from(table).select(columns).order(orderBy, { ascending: true }).range(from, from + PAGE - 1);
-    if (error) throw new Error(error.message);
-    rows.push(...((data ?? []) as T[]));
-    if (!data || data.length < PAGE) return rows;
-  }
-}
-
-/** Downloads everything the logged-in member is allowed to read. */
-export async function fetchSnapshot(source: SnapshotSource): Promise<Snapshot> {
-  const [members, expenses, splits, settlements] = await Promise.all([
-    fetchAll<RemoteMember>(source, 'members', 'id,name,username,phone,email,notes,is_admin,is_active,created_at', 'id'),
-    fetchAll<RemoteExpense>(
-      source,
-      'expenses',
-      'id,title,description,amount,category,expense_date,paid_by,split_mode,created_by,created_at,updated_at',
-      'id',
-    ),
-    fetchAll<RemoteSplit>(source, 'expense_splits', 'expense_id,member_id,amount', 'expense_id'),
-    fetchAll<RemoteSettlement>(
-      source,
-      'settlements',
-      'id,from_member_id,to_member_id,amount,settlement_date,note,created_by,created_at',
-      'id',
-    ),
-  ]);
-  return { members, expenses, splits, settlements };
-}
-
-/** Inserts rows in batches (one statement per batch) so large histories sync quickly. */
-async function insertMany(db: Db, table: string, columns: string[], rows: SqlValue[][]) {
-  const BATCH = 100;
-  const placeholder = `(${columns.map(() => '?').join(',')})`;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const chunk = rows.slice(i, i + BATCH);
-    await db.runAsync(
-      `INSERT INTO ${table} (${columns.join(',')}) VALUES ${chunk.map(() => placeholder).join(',')}`,
-      chunk.flat(),
-    );
+async function deleteMissing(db: Db, table: 'members' | 'expenses' | 'settlements', keep: Set<string>) {
+  const existing = await idMap(db, table);
+  for (const [remoteId, id] of existing) {
+    if (keep.has(remoteId)) continue;
+    if (table === 'expenses') await db.runAsync('DELETE FROM expense_splits WHERE expense_id = ?', [id]);
+    await db.runAsync(`DELETE FROM ${table} WHERE id = ?`, [id]);
   }
 }
 
 /**
- * Replaces the local copy with the downloaded data in one transaction, so screens never
- * see a half-updated state. Remote ids are kept, so links between rows stay intact.
+ * Makes this phone's copy match the shared data, in one transaction so screens never see a
+ * half-updated state. Rows keep their local id across syncs (matched by Firebase id), so a
+ * screen that is open on an expense stays valid; unchanged expenses are skipped.
  */
 export async function applySnapshot(db: Db, snap: Snapshot): Promise<void> {
   await transaction(db, async () => {
-    await db.runAsync('DELETE FROM expense_splits', []);
-    await db.runAsync('DELETE FROM settlements', []);
-    await db.runAsync('DELETE FROM expenses', []);
-    await db.runAsync('DELETE FROM members', []);
+    // 1. Members first, because expenses and payments point at them.
+    const memberIds = await idMap(db, 'members');
+    for (const m of byCreated(snap.members)) {
+      const values: SqlValue[] = [m.name, m.username, m.phone, m.email, m.notes, m.isAdmin ? 1 : 0, m.isActive ? 1 : 0, m.createdAt];
+      const localId = memberIds.get(m.id);
+      if (localId === undefined) {
+        const res = await db.runAsync(
+          `INSERT INTO members (name, username, phone, email, notes, is_admin, is_active, created_at, remote_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...values, m.id],
+        );
+        memberIds.set(m.id, res.lastInsertRowId);
+      } else {
+        await db.runAsync(
+          `UPDATE members SET name = ?, username = ?, phone = ?, email = ?, notes = ?, is_admin = ?, is_active = ?, created_at = ?
+           WHERE id = ?`,
+          [...values, localId],
+        );
+      }
+    }
+    const member = (remoteId: string) => memberIds.get(remoteId) ?? null;
 
-    await insertMany(
-      db,
-      'members',
-      ['id', 'name', 'username', 'phone', 'email', 'notes', 'is_admin', 'is_active', 'created_at'],
-      snap.members.map((m) => [m.id, m.name, m.username, m.phone, m.email, m.notes, m.is_admin ? 1 : 0, m.is_active ? 1 : 0, m.created_at]),
+    // 2. Remove entries that were deleted by their owner.
+    await deleteMissing(db, 'expenses', new Set(snap.expenses.map((e) => e.id)));
+    await deleteMissing(db, 'settlements', new Set(snap.settlements.map((s) => s.id)));
+
+    // 3. Expenses: insert new ones, rewrite changed ones.
+    const known = new Map(
+      (
+        await db.getAllAsync<{ id: number; remote_id: string; updated_at: string }>(
+          'SELECT id, remote_id, updated_at FROM expenses WHERE remote_id IS NOT NULL',
+          [],
+        )
+      ).map((r) => [r.remote_id, r]),
     );
-    await insertMany(
-      db,
-      'expenses',
-      ['id', 'title', 'description', 'amount', 'category', 'expense_date', 'paid_by', 'split_mode', 'created_by', 'created_at', 'updated_at'],
-      snap.expenses.map((e) => [
-        e.id,
-        e.title,
-        e.description,
-        Number(e.amount),
-        e.category,
-        e.expense_date,
-        e.paid_by,
-        e.split_mode,
-        e.created_by,
-        e.created_at,
-        e.updated_at,
-      ]),
-    );
-    await insertMany(
-      db,
-      'expense_splits',
-      ['expense_id', 'member_id', 'amount'],
-      snap.splits.map((s) => [s.expense_id, s.member_id, Number(s.amount)]),
-    );
-    await insertMany(
-      db,
-      'settlements',
-      ['id', 'from_member_id', 'to_member_id', 'amount', 'settlement_date', 'note', 'created_by', 'created_at'],
-      snap.settlements.map((s) => [
-        s.id,
-        s.from_member_id,
-        s.to_member_id,
-        Number(s.amount),
-        s.settlement_date,
-        s.note,
-        s.created_by,
-        s.created_at,
-      ]),
-    );
+    for (const e of byCreated(snap.expenses)) {
+      const existing = known.get(e.id);
+      if (existing && existing.updated_at === e.updatedAt) continue;
+      const values: SqlValue[] = [e.title, e.description, e.amount, e.category, e.date, member(e.paidBy), e.splitMode, member(e.createdBy), e.createdAt, e.updatedAt];
+      let localId: number;
+      if (existing) {
+        localId = existing.id;
+        await db.runAsync(
+          `UPDATE expenses SET title = ?, description = ?, amount = ?, category = ?, expense_date = ?, paid_by = ?,
+             split_mode = ?, created_by = ?, created_at = ?, updated_at = ? WHERE id = ?`,
+          [...values, localId],
+        );
+        await db.runAsync('DELETE FROM expense_splits WHERE expense_id = ?', [localId]);
+      } else {
+        const res = await db.runAsync(
+          `INSERT INTO expenses (title, description, amount, category, expense_date, paid_by, split_mode, created_by, created_at, updated_at, remote_id)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          [...values, e.id],
+        );
+        localId = res.lastInsertRowId;
+      }
+      for (const s of e.splits) {
+        const memberId = member(s.memberId);
+        if (memberId === null || s.amount <= 0) continue;
+        await db.runAsync('INSERT INTO expense_splits (expense_id, member_id, amount) VALUES (?, ?, ?)', [localId, memberId, s.amount]);
+      }
+    }
+
+    // 4. Payments between members never change after they are saved, so only new ones are added.
+    const settlementIds = await idMap(db, 'settlements');
+    for (const s of byCreated(snap.settlements)) {
+      if (settlementIds.has(s.id)) continue;
+      const from = member(s.fromId);
+      const to = member(s.toId);
+      if (from === null || to === null) continue;
+      await db.runAsync(
+        `INSERT INTO settlements (from_member_id, to_member_id, amount, settlement_date, note, created_by, created_at, remote_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [from, to, s.amount, s.date, s.note, member(s.createdBy), s.createdAt, s.id],
+      );
+    }
+
+    // 5. Members are only ever removed when the phone's copy is cleared on log-out.
+    await deleteMissing(db, 'members', new Set(snap.members.map((m) => m.id)));
   });
 }
 
-export const EMPTY_SNAPSHOT: Snapshot = { members: [], expenses: [], splits: [], settlements: [] };
+/** Looks up the Firebase ids the server needs for a change made on this phone. */
+export async function remoteIdOf(db: Db, table: 'members' | 'expenses' | 'settlements', localId: number): Promise<string | null> {
+  const row = await db.getFirstAsync<{ remote_id: string | null }>(`SELECT remote_id FROM ${table} WHERE id = ?`, [localId]);
+  return row?.remote_id ?? null;
+}
+
+export async function localIdOf(db: Db, table: 'members' | 'expenses' | 'settlements', remoteId: string): Promise<number | null> {
+  const row = await db.getFirstAsync<{ id: number }>(`SELECT id FROM ${table} WHERE remote_id = ?`, [remoteId]);
+  return row?.id ?? null;
+}

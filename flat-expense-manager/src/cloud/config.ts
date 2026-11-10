@@ -1,15 +1,27 @@
 /**
- * Shared (cloud) mode settings. Set these in `.env` for development and in `eas.json`
+ * Shared (Firebase) mode settings. Set these in `.env` for development and in `eas.json`
  * for APK builds. When they are missing the app runs in local-only mode.
+ * Values come from Firebase console → Project settings → Your apps → Web app → Config.
  */
-export const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL ?? '';
-export const SUPABASE_ANON_KEY = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ?? '';
+export const firebaseConfig = {
+  apiKey: process.env.EXPO_PUBLIC_FIREBASE_API_KEY ?? '',
+  authDomain: process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN ?? '',
+  projectId: process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID ?? '',
+  storageBucket: process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET ?? '',
+  messagingSenderId: process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID ?? '',
+  appId: process.env.EXPO_PUBLIC_FIREBASE_APP_ID ?? '',
+};
 
-export const isCloudConfigured = SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 20;
+/** Only for automated tests: host of a local Firebase emulator (e.g. "localhost"). */
+export const EMULATOR_HOST = process.env.EXPO_PUBLIC_FIREBASE_EMULATOR_HOST ?? '';
+
+const filled = (v: string) => v.length > 3 && !v.startsWith('PASTE_');
+
+export const isCloudConfigured = filled(firebaseConfig.apiKey) && filled(firebaseConfig.projectId) && filled(firebaseConfig.appId);
 
 /**
- * People log in with a username. Supabase logins are email-based, so each username maps to
- * "<username>@flat6.app" (never emailed; accounts are created with "Auto Confirm User").
+ * People log in with a username. Firebase logins are email-based, so each username maps to
+ * "<username>@flat6.app". No email is ever sent to it.
  */
 export const LOGIN_EMAIL_DOMAIN = 'flat6.app';
 

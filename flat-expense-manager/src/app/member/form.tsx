@@ -1,6 +1,6 @@
 import { router, Stack, useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { Button } from '../../components/Button';
 import { confirmAsync, showError, showInfo } from '../../components/dialogs';
@@ -46,6 +46,8 @@ function MemberForm({ member }: { member: Member | null }) {
   const { run, busy } = useSubmit();
   const [name, setName] = useState(member?.name ?? '');
   const [username, setUsername] = useState(member?.username ?? '');
+  const [password, setPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
   const [phone, setPhone] = useState(member?.phone ?? '');
   const [email, setEmail] = useState(member?.email ?? '');
   const [notes, setNotes] = useState(member?.notes ?? '');
@@ -53,8 +55,8 @@ function MemberForm({ member }: { member: Member | null }) {
 
   const save = () =>
     run(async () => {
-      const input = { name, username, phone, email, notes };
-      const fieldErrors = validateMember(input, { requireUsername: cloud });
+      const input = { name, username, password, phone, email, notes };
+      const fieldErrors = validateMember(input, { requireUsername: cloud && !member, requirePassword: cloud && !member });
       setErrors(fieldErrors);
       if (Object.keys(fieldErrors).length > 0) return;
       try {
@@ -62,6 +64,18 @@ function MemberForm({ member }: { member: Member | null }) {
         router.back();
       } catch (e) {
         showError(e);
+      }
+    });
+
+  const resetLogin = () =>
+    run(async () => {
+      if (!member || !store.resetMemberLogin) return;
+      try {
+        await store.resetMemberLogin(member.id, newPassword);
+        setNewPassword('');
+        showInfo('New password set', `${member.name} can now log in with username "${member.username}" and the new password.`);
+      } catch (e) {
+        showError(e, 'Could not set password');
       }
     });
 
@@ -99,23 +113,50 @@ function MemberForm({ member }: { member: Member | null }) {
       {!store.canManageMembers ? (
         <Banner tone="neutral" icon="lock-closed" title="Only the admin can change members" />
       ) : null}
-      {cloud ? (
-        <TextField
-          label="Login username"
-          required
-          value={username}
-          onChangeText={(t) => setUsername(t.toLowerCase().replace(/\s/g, ''))}
-          placeholder="e.g. ali"
-          autoCapitalize="none"
-          autoCorrect={false}
-          error={errors.username}
-          maxLength={30}
-          hint={`In Supabase, create the login ${username || '<username>'}@${LOGIN_EMAIL_DOMAIN} with a password.`}
-        />
+      {cloud && !member ? (
+        <>
+          <TextField
+            label="Login username"
+            required
+            value={username}
+            onChangeText={(t) => setUsername(t.toLowerCase().replace(/\s/g, ''))}
+            placeholder="e.g. ali"
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={errors.username}
+            maxLength={30}
+          />
+          <TextField
+            label="Password"
+            required
+            value={password}
+            onChangeText={setPassword}
+            placeholder="At least 6 characters"
+            autoCapitalize="none"
+            autoCorrect={false}
+            error={errors.password}
+            hint="Give this username and password to your flatmate so they can log in."
+          />
+        </>
       ) : null}
+      {cloud && member ? <Text style={styles.login}>Login username: {member.username ?? '—'}</Text> : null}
       <TextField label="Phone" value={phone} onChangeText={setPhone} placeholder="0300-1234567" keyboardType="phone-pad" error={errors.phone} maxLength={20} />
       <TextField label="Email" value={email} onChangeText={setEmail} placeholder="Optional" keyboardType="email-address" autoCapitalize="none" error={errors.email} />
       <TextField label="Notes" value={notes} onChangeText={setNotes} placeholder="Room number, joining date…" multiline maxLength={200} error={errors.notes} />
+      {cloud && member && store.canManageMembers && store.resetMemberLogin && member.id !== store.me?.memberId ? (
+        <View style={styles.reset}>
+          <TextField
+            label="Forgot password? Set a new one"
+            value={newPassword}
+            onChangeText={setNewPassword}
+            placeholder="New password (at least 6 characters)"
+            autoCapitalize="none"
+            autoCorrect={false}
+            hint={`First delete the old login ${member.username}@${LOGIN_EMAIL_DOMAIN} in the Firebase console (Authentication → Users).`}
+          />
+          <Button title="Set new password" variant="secondary" icon="key-outline" onPress={resetLogin} disabled={busy || newPassword.length < 6} />
+        </View>
+      ) : null}
     </Screen>
   );
 }
@@ -123,5 +164,7 @@ function MemberForm({ member }: { member: Member | null }) {
 const styles = StyleSheet.create({
   footer: { flexDirection: 'row', gap: 12 },
   flex1: { flex: 1 },
+  login: { fontSize: 13, color: '#64748B', fontWeight: '600' },
+  reset: { gap: 12, marginTop: 8, paddingTop: 16, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E5E7EB' },
   flex2: { flex: 2 },
 });
